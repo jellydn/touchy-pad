@@ -596,6 +596,84 @@ flash-merged: merge-bin
         --before default-reset --after hard-reset \
         --chip "$chip" write-flash 0x0 {{justfile_directory()}}/firmware/build/touchy_pad_merged.bin
 
+# Flash the built image on this Mac. Lists /dev/cu.* and uses the one USB
+# serial port. Override with TOUCHY_PORT=/dev/cu.usbmodemXXXX.
+# A charge-only cable never creates that port. While the app is running the
+# serial port is hidden: hold BOOT, tap RST, release BOOT, then run this again.
+up:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "serial ports:"
+    if ! ls -1 /dev/cu.*; then
+        echo "(no /dev/cu.* ports)"
+    fi
+
+    port="${TOUCHY_PORT:-}"
+    if [ -z "$port" ]; then
+        ports=""
+        add_port() {
+            case " $ports " in
+                *" $1 "*) return ;;
+            esac
+            ports="$ports $1"
+        }
+        for pattern in /dev/cu.usbmodem* /dev/cu.usbserial* /dev/cu.wchusbserial* /dev/cu.SLAB_USBtoUART*; do
+            for match in $pattern; do
+                if [ -e "$match" ] && [ -r "$match" ] && [ -w "$match" ]; then
+                    add_port "$match"
+                fi
+            done
+        done
+        # shellcheck disable=SC2086
+        set -- $ports
+        if [ $# -eq 0 ]; then
+            echo "error: no USB serial port in that list." >&2
+            echo "Plug a USB data cable into the USB-C port on the JC4827W543." >&2
+            echo "A charge-only cable powers the panel and does not create /dev/cu.usbmodem*." >&2
+            echo "While Touchy-Pad is running, macOS hides the serial port." >&2
+            echo "Hold BOOT, tap RST, release BOOT, then run: just up" >&2
+            exit 1
+        fi
+        if [ $# -gt 1 ]; then
+            echo "error: more than one USB serial port. Set TOUCHY_PORT and run again:" >&2
+            printf '  %s\n' "$@" >&2
+            exit 1
+        fi
+        port="$1"
+    fi
+    if [ ! -e "$port" ]; then
+        echo "error: $port does not exist" >&2
+        exit 1
+    fi
+    if [ ! -f firmware/build/flash_args ]; then
+        echo "error: firmware/build/flash_args is missing. Run: just firmware-build" >&2
+        exit 1
+    fi
+    if ! command -v esptool >/dev/null 2>&1; then
+        echo "error: esptool is not on PATH" >&2
+        exit 1
+    fi
+    chip="esp32s3"
+    if [ -f firmware/build/CMakeCache.txt ]; then
+        cached="$(grep -m1 '^IDF_TARGET:STRING=' firmware/build/CMakeCache.txt | cut -d= -f2 || true)"
+        chip="${cached:-esp32s3}"
+    fi
+    echo "flashing $chip at $port (dio, 80m, from firmware/build/flash_args)"
+    args=()
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -z "$line" ] && continue
+        # flash_args is flags, then "offset file" pairs. Paths have no spaces.
+        # shellcheck disable=SC2206
+        words=($line)
+        args+=("${words[@]}")
+    done < firmware/build/flash_args
+    (
+        cd firmware/build
+        esptool -p "$port" -b 460800 \
+            --before default-reset --after hard-reset \
+            --chip "$chip" write-flash "${args[@]}"
+    )
+
 # setup for common devboards
 hw-543:
     just firmware-reconfigure jc4827w543

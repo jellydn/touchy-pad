@@ -6,7 +6,9 @@ The script is [`scripts/desk/desk.py`](../scripts/desk/desk.py).
 
 ## What you need
 
-- The JC4827W543 plugged in. The USB name is **Touchy-Pad** / Geeksville. While the app is running there is no serial port. Hold **BOOT**, tap **RST**, and release **BOOT** when you need esptool again.
+- A **USB data cable** in the USB-C port on the JC4827W543. A charge-only cable lights the panel and never shows up on the Mac. There is one USB-C port; it is wired to the ESP32-S3.
+- While the app is running the Mac names the board **Touchy-Pad** / Geeksville. That is the link the pages and the tomato clock use. It is not a serial port, so `ls /dev/cu.*` does not list the board.
+- To flash, hold **BOOT**, tap **RST**, and release **BOOT**. The ROM serial port then appears as `/dev/cu.usbmodem*`. `just up` lists `/dev/cu.*` and writes the built image to that port.
 - Python 3.11–3.14 and Poetry, from the `app` directory. Pillow is already a dependency.
 - Tuna running, with the hyper chords in `~/Projects/dotfiles/macos/.config/tuna/config.toml`. Hyper is `ctrl+opt+shift+cmd`.
 - macOS, for the tomato chime (`afplay` and `osascript`) and the fonts the clock face uses.
@@ -81,15 +83,15 @@ python3 scripts/desk/render_shots.py
 
 ## Firmware on this board
 
-Board id `jc4827w543`, chip ESP32-S3, 4 MB flash, 8 MB octal PSRAM. The image that is running was built with ESP-IDF v6.0.1 and written in DIO mode at 80 MHz:
+Board id `jc4827w543`, chip ESP32-S3, 4 MB flash, 8 MB octal PSRAM. The image that is running was built with ESP-IDF v6.0.1 and written in DIO mode at 80 MHz.
+
+On this Mac, build once, put the board in the ROM bootloader (data cable, hold **BOOT**, tap **RST**), then flash:
 
 ```bash
-esptool --chip esp32s3 --baud 460800 \
-  --before default-reset --after hard-reset \
-  write-flash --flash-mode dio --flash-freq 80m --flash-size 4MB \
-  0x0 firmware/build/jc4827w543.bin
+just firmware-build
+just up
 ```
 
-`just flash` on this Mac looks for an IDF v6.1 activate script and for `/host/dev/ttyACM*`. Use esptool and the port from `ls /dev/cu.usb*` after the ROM bootloader is up.
+`just up` runs `ls /dev/cu.*`, keeps the single `/dev/cu.usbmodem*` (or `usbserial` / `wchusbserial` / `SLAB_USBtoUART`) port, and runs esptool with `firmware/build/flash_args` (DIO, 80 MHz, 4 MB). Set `TOUCHY_PORT` when more than one USB serial port is present. `just flash` still looks for an IDF v6.1 activate script and for `/host/dev/ttyACM*`, which this Mac does not have.
 
 The previous Token Pulse image was copied off the chip before that write. The 4 MB dump is outside this repo, under `~/src/tries/jc4827w543-backups/`. Restore it by writing that whole file at offset 0 with the same flash mode, after the ROM port is back. Do not commit that dump. It can contain Wi-Fi credentials.

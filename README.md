@@ -61,4 +61,6 @@ poetry run python ../scripts/desk/desk.py clock
 
 `setup` writes all three pages and shows **Apps**. `clock` has to stay running for the tomato page. Stop `clock` before `setup`. Both use the same USB command link.
 
+To write firmware, use a data cable, hold **BOOT**, tap **RST**, release **BOOT**, then `just up`. That lists `/dev/cu.*` and flashes the one USB serial port. Details are in the guide.
+
 The pictures above are the three pages at the panel size (drawn at 2×). This board has no screen-capture command, so they are the layouts that are on the glass, not a photo of the LCD.
