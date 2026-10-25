@@ -1067,7 +1067,7 @@ def _do_screen_init(pad) -> None:
         logger.info("sent %s", DEFAULT_SCREEN_PATH)
 
         touchy_png = make_touchy_png()
-        pad.file_save(_TOUCHY_IMG_PATH, touchy_png, max_width=128, max_height=128)
+        pad.file_save(_TOUCHY_IMG_PATH, touchy_png, max_width=256, max_height=256)
         logger.info("sent %s (%d bytes source)", _TOUCHY_IMG_PATH, len(touchy_png))
 
         _do_write_trackpad(pad, _TOUCHY_IMG_PATH)

@@ -26,7 +26,7 @@ def make_smiley_png() -> bytes:
 
 
 def make_touchy_png() -> bytes:
-    """Return the packaged 256×256 Touchy-Pad logo as a PNG.
+    """Return the packaged 256×256 default logo as a PNG.
 
     The bytes are read from ``touchy_pad/assets/touchy-256.png``. Used by
     ``touchy init`` as the source for ``F:host/images/touchy.png``; the host
