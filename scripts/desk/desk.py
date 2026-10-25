@@ -20,6 +20,7 @@ From the ``app`` directory::
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import queue
 import subprocess
@@ -323,6 +324,11 @@ def _serve_clock(commands: queue.Queue[str], clock: Clock) -> None:
 def clock_loop() -> None:
     commands: queue.Queue[str] = queue.Queue()
     clock = Clock()
+    remain = os.environ.get("TOUCHY_TOMATO_REMAINING")
+    if remain:
+        clock.remaining = float(remain)
+    if os.environ.get("TOUCHY_TOMATO_RUNNING") == "1":
+        clock.start()
     while True:
         try:
             _serve_clock(commands, clock)
@@ -337,6 +343,8 @@ def clock_loop() -> None:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
+    logging.getLogger("touchy_pad.device").setLevel(logging.INFO)
     parser = argparse.ArgumentParser(description="JC4827 desk pages")
     parser.add_argument("command", choices=("setup", "clock"))
     args = parser.parse_args()
