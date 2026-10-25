@@ -7,7 +7,7 @@ stays off the page. Rose means under 20% left. Teal is the rest.
 
 Start the server first::
 
-    codexbar serve --host 127.0.0.1 --port 8080 --refresh-interval 60 --identity redacted
+    codexbar serve --host 127.0.0.1 --port 8899 --refresh-interval 60 --identity redacted
 
 Then ``python scripts/desk/desk.py pulse``. The pad cannot see
 127.0.0.1, so this process has to stay running to refresh the page.
@@ -37,7 +37,7 @@ from touchy_pad.api import (
 )
 from touchy_pad.api.errors import TouchyError
 
-CODEXBAR_URL = os.environ.get("CODEXBAR_URL", "http://127.0.0.1:8080").rstrip("/")
+CODEXBAR_URL = os.environ.get("CODEXBAR_URL", "http://127.0.0.1:8899").rstrip("/")
 POLL_S = 60
 MAX_ROWS = 6
 LOW_REMAINING = 20
