@@ -6,7 +6,7 @@ Three pages share one prev/next bar. The files sort `apps`, `tomato`, `trackpad`
 
 ## Apps
 
-Eight buttons. Each tap sends the Hyper chord (`ctrl+opt+shift+cmd` plus a key) that Tuna already uses. Tuna must be running. No helper has to stay open for these buttons.
+Eight keys are the app icons, with no extra background. The transparent corners show the screen. A tap sends the Hyper chord (`ctrl+opt+shift+cmd` plus a key) that Tuna already uses. Tuna must be running. No helper has to stay open for these keys.
 
 ![Apps page](docs/images/desk-apps.png)
 

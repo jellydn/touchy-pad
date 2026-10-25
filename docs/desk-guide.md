@@ -35,7 +35,7 @@ Prev and Next walk that directory in sorted order: **Apps**, **Tomato**, **Track
 
 ## App buttons
 
-Each button is a device-side key tap. The pad acts as a USB keyboard, so the helper can exit and the buttons still work.
+Each key is that app's icon with no extra background. The corners are transparent, so the screen shows through. The press still sends the chord below. The pad acts as a USB keyboard, so the helper can exit and the buttons still work.
 
 | Button | Tuna chord | App |
 | --- | --- | --- |

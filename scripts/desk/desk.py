@@ -3,17 +3,22 @@
 
 ``setup`` uploads the chrome, the ITMAN logo, and the three page bodies:
 
-* ``F:host/uscr/apps.pb``    — eight Tuna hyper-key buttons
+* ``F:host/uscr/apps.pb``    — eight Tuna hyper-key icon buttons
 * ``F:host/uscr/tomato.pb``  — tomato clock face and controls
 * ``F:host/uscr/trackpad.pb`` — multitouch trackpad on the logo
 
+``setup`` also uploads the icons under ``F:host/images/apps/``. ``apps``
+re-uploads just the icons and that page, then brings it to the front, so the
+page can be refreshed without touching the other two.
+
 ``clock`` keeps the tomato digits moving. Leave that process running.
-The app buttons do not need it. Tuna must be running for those buttons,
+The app keys do not need it. Tuna must be running for those keys,
 because each one sends the hyper chord from ``config.toml``.
 
 From the ``app`` directory::
 
     poetry run python ../scripts/desk/desk.py setup
+    poetry run python ../scripts/desk/desk.py apps
     poetry run python ../scripts/desk/desk.py clock
 """
 
@@ -26,11 +31,12 @@ import queue
 import subprocess
 import threading
 import time
+from pathlib import Path
 
 import usb.core
-
 from touchy_pad.api import (
     Layer,
+    LvState,
     TextAlign,
     build_default_screen,
     button,
@@ -40,6 +46,7 @@ from touchy_pad.api import (
     grow,
     hid_keys,
     host_action,
+    image_button,
     label,
     macro_action,
     protobuf,
@@ -77,16 +84,49 @@ SHORT_S = 5 * 60
 LONG_S = 15 * 60
 PHASE_LABEL = {"focus": "Focus", "short": "Short break", "long": "Long break"}
 
+# Icons are transparent outside the artwork. The button fill matches the
+# screen (display.cpp uses 0x000020), so a key has no plate of its own.
+SCREEN = 0x000020
+ICON_DIR = Path(__file__).resolve().parent / "icons"
+
+
+def _app_icon_path(wid: str) -> str:
+    return f"F:host/images/apps/{wid}.png"
+
+
+def _clear_key() -> list:
+    # Same colour pressed and released, no border or shadow, so the only
+    # paint is the transparent icon on the screen.
+    return [
+        style(bg_color=SCREEN, radius=0, border_w=0, pad=0, shadow_width=0),
+        style(
+            bg_color=SCREEN,
+            radius=0,
+            border_w=0,
+            pad=0,
+            shadow_width=0,
+            for_state=LvState.STATE_PRESSED,
+        ),
+    ]
+
+
+def upload_app_icons(pad) -> None:
+    for wid, _caption, _key in APPS:
+        path = _app_icon_path(wid)
+        pad.file_save(path, (ICON_DIR / f"{wid}.png").read_bytes())
+        print(f"saved {path}", flush=True)
+
 
 def build_apps_page() -> protobuf.Widget:
-    page = Layer(layout=grid(cols=4, rows=2, gap=8))
-    for i, (wid, caption, key) in enumerate(APPS):
+    page = Layer(layout=grid(cols=4, rows=2, gap=6))
+    for i, (wid, _caption, key) in enumerate(APPS):
         page += cell(
-            button(
+            image_button(
                 wid,
-                text=caption,
+                asset=_app_icon_path(wid),
+                pressed_scale=0.92,
                 on_click=macro_action([set_delay(40), key_tap(key, HYPER)]),
-                style=style(font_size=16),
+                style=_clear_key(),
             ),
             col=i % 4,
             row=i // 4,
@@ -263,6 +303,7 @@ def setup() -> None:
         _, trackpad = build_trackpad(LOGO_PATH)
         pad.user_screen_save("trackpad", trackpad)
         print("saved F:host/uscr/trackpad.pb", flush=True)
+        upload_app_icons(pad)
         pad.user_screen_save("apps", build_apps_page())
         print("saved F:host/uscr/apps.pb", flush=True)
         # Tomato body is uploaded again by `clock`, which owns the buttons.
@@ -400,10 +441,17 @@ def main() -> None:
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("touchy_pad.device").setLevel(logging.INFO)
     parser = argparse.ArgumentParser(description="JC4827 desk pages")
-    parser.add_argument("command", choices=("setup", "clock"))
+    parser.add_argument("command", choices=("setup", "clock", "apps"))
     args = parser.parse_args()
     if args.command == "setup":
         setup()
+    elif args.command == "apps":
+        with touchy_open() as pad:
+            pad.client.screen_wake()
+            upload_app_icons(pad)
+            pad.user_screen_save("apps", build_apps_page())
+            pad.show_user_screen("apps")
+            print("showing apps", flush=True)
     else:
         clock_loop()
 
