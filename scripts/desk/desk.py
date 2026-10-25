@@ -299,6 +299,9 @@ def _serve_clock(commands: queue.Queue[str], clock: Clock) -> None:
     # inside a swapped user page.
     shown = ""
     visible = False
+    # A page rebuild can deliver a click that was already on the glass.
+    ignore_until = time.monotonic() + 1.5
+    last_poke = 0.0
     with touchy_open() as pad:
         info = pad.board_info
         print(f"board {info.board_name}  firmware {info.firmware_version_str}", flush=True)
@@ -315,12 +318,21 @@ def _serve_clock(commands: queue.Queue[str], clock: Clock) -> None:
         shown = f"{_fmt(clock.remaining)} {clock.status()}"
         print(f"ready {shown}", flush=True)
         while True:
+            thread = pad._thread
+            if thread is not None and not thread.is_alive() and not pad._stop.is_set():
+                raise usb.core.USBError("event thread stopped")
+            now = time.monotonic()
+            if now - last_poke > 2:
+                pad.client.screen_wake()
+                last_poke = now
             notes: list[str] = []
             while True:
                 try:
                     cmd = commands.get_nowait()
                 except queue.Empty:
                     break
+                if time.monotonic() < ignore_until:
+                    continue
                 if cmd == "start":
                     clock.start()
                 elif cmd == "pause":
