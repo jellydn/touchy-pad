@@ -18,9 +18,12 @@ The app keys do not need it. Tuna must be running for those keys,
 because each one sends the hyper chord from ``config.toml``.
 
 ``pulse`` writes the Token Pulse page from a local CodexBar server.
-Leave that process running too. Start the server first::
+The pad has one USB link, so ``pulse`` also keeps the tomato countdown
+when that session is still on the glass. ``just dev`` starts Tuna,
+CodexBar, and this helper together. Leave that process running.
+Start the server first::
 
-    codexbar serve --host 127.0.0.1 --port 8080 --refresh-interval 60 --identity redacted
+    codexbar serve --host 127.0.0.1 --port 8899 --refresh-interval 60 --identity redacted
 
 From the ``app`` directory::
 
@@ -32,6 +35,7 @@ From the ``app`` directory::
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import queue
@@ -67,7 +71,9 @@ from touchy_pad.api.images import make_touchy_png
 from touchy_pad.api.macros import key_tap, set_delay
 from touchy_pad.pages.trackpad import build as build_trackpad
 
-from pulse import pulse_loop
+from pulse import POLL_S, build_usage_page, fetch_snapshot, pulse_loop
+
+TOMATO_STATE = Path("/tmp/touchy-tomato-state.json")
 
 LOGO_PATH = "F:host/images/touchy.png"
 SOUND = "/System/Library/Sounds/Glass.aiff"
@@ -344,7 +350,88 @@ def _save_tomato(pad, commands: queue.Queue[str], clock: Clock, drive: str) -> s
     return pad.user_screen_save("tomato", build_tomato_page(commands, clock), drive=drive)
 
 
-def _serve_clock(commands: queue.Queue[str], clock: Clock) -> None:
+def _save_with_ram_fallback(save, drive: str) -> tuple[str, str]:
+    """Write on ``drive``. A stuck flash transaction falls back to RAM once."""
+    try:
+        return save(drive), drive
+    except TouchyError as exc:
+        if drive != "F" or exc.code_name != "IO_ERROR":
+            raise
+        print(
+            "flash write is stuck. Showing this page from RAM. "
+            "Tap RST once, and do not hold BOOT, so it can be stored.",
+            flush=True,
+        )
+        return save("R"), "R"
+
+
+def _clock_state(clock: Clock) -> dict[str, object]:
+    return {
+        "phase": clock.phase,
+        "remaining": clock.remaining,
+        "done": clock.done,
+        "running": clock.running,
+        "saved_at": time.time(),
+    }
+
+
+def _store_clock(clock: Clock) -> None:
+    TOMATO_STATE.write_text(json.dumps(_clock_state(clock)))
+
+
+def _restore_clock(clock: Clock) -> bool:
+    """Resume a countdown. Env wins, then the last helper state. False = leave the page."""
+    remain = os.environ.get("TOUCHY_TOMATO_REMAINING")
+    running = os.environ.get("TOUCHY_TOMATO_RUNNING")
+    if remain or running == "1":
+        if remain:
+            clock.remaining = float(remain)
+        phase = os.environ.get("TOUCHY_TOMATO_PHASE")
+        if phase in PHASE_LABEL:
+            clock.phase = phase
+        done = os.environ.get("TOUCHY_TOMATO_DONE")
+        if done:
+            clock.done = int(done)
+        if running == "1":
+            clock.start()
+        return True
+    if not TOMATO_STATE.exists():
+        return False
+    try:
+        data = json.loads(TOMATO_STATE.read_text())
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return False
+    phase = data.get("phase")
+    if phase in PHASE_LABEL:
+        clock.phase = phase
+    done = data.get("done")
+    if isinstance(done, int):
+        clock.done = done
+    remaining = data.get("remaining")
+    if isinstance(remaining, (int, float)):
+        clock.remaining = float(remaining)
+    saved_at = data.get("saved_at")
+    if data.get("running") and isinstance(saved_at, (int, float)):
+        clock.remaining = max(0.0, clock.remaining - (time.time() - float(saved_at)))
+        if clock.remaining > 0:
+            clock.start()
+        else:
+            clock.running = True
+            clock._deadline = time.monotonic()
+    return True
+
+
+def _pulse_fetch(slot: dict, stop: threading.Event) -> None:
+    while not stop.is_set():
+        try:
+            slot["snapshot"] = fetch_snapshot()
+        except Exception as exc:
+            print(f"codexbar {exc}", flush=True)
+        if stop.wait(POLL_S):
+            return
+
+
+def _serve_clock(commands: queue.Queue[str], clock: Clock, with_pulse: bool = False) -> None:
     # Rewriting tomato.pb rebuilds the page body in place, which is what
     # makes the label text change. set_property does not reach a label
     # inside a swapped user page.
@@ -357,6 +444,46 @@ def _serve_clock(commands: queue.Queue[str], clock: Clock) -> None:
     # A page rebuild can deliver a click that was already on the glass.
     ignore_until = time.monotonic() + 1.5
     last_poke = 0.0
+    shown_pulse = ""
+    pulse_drive = "F"
+    pulse_visible = False
+    pulse_slot: dict = {}
+    stop_pulse = threading.Event()
+    if with_pulse:
+        threading.Thread(target=_pulse_fetch, args=(pulse_slot, stop_pulse), daemon=True).start()
+    try:
+        _serve_clock_link(
+            commands,
+            clock,
+            with_pulse,
+            shown,
+            drive,
+            visible,
+            ignore_until,
+            last_poke,
+            shown_pulse,
+            pulse_drive,
+            pulse_visible,
+            pulse_slot,
+        )
+    finally:
+        stop_pulse.set()
+
+
+def _serve_clock_link(
+    commands: queue.Queue[str],
+    clock: Clock,
+    with_pulse: bool,
+    shown: str,
+    drive: str,
+    visible: str,
+    ignore_until: float,
+    last_poke: float,
+    shown_pulse: str,
+    pulse_drive: str,
+    pulse_visible: bool,
+    pulse_slot: dict,
+) -> None:
     with touchy_open() as pad:
         info = pad.board_info
         print(f"board {info.board_name}  firmware {info.firmware_version_str}", flush=True)
@@ -397,18 +524,20 @@ def _serve_clock(commands: queue.Queue[str], clock: Clock) -> None:
             current = f"{_fmt(clock.remaining)} {clock.status()}"
             if current != shown or drive != visible:
                 try:
-                    path = _save_tomato(pad, commands, clock, drive)
+                    path, drive = _save_with_ram_fallback(
+                        lambda target: _save_tomato(pad, commands, clock, target),
+                        drive,
+                    )
                 except TouchyError as exc:
-                    if drive == "F" and exc.code_name == "IO_ERROR":
-                        print(
-                            "flash write is stuck. Showing the clock from RAM. "
-                            "Tap RST once, and do not hold BOOT, so this page can be stored.",
-                            flush=True,
-                        )
-                        drive = "R"
-                        path = _save_tomato(pad, commands, clock, "R")
-                    else:
+                    if exc.code_name != "IO_ERROR":
                         raise
+                    print(
+                        "flash write is stuck. Tap RST once, and do not hold BOOT. Retrying.",
+                        flush=True,
+                    )
+                    time.sleep(1)
+                    continue
+                _store_clock(clock)
                 print(f"saved {path}", flush=True)
                 if os.environ.get("TOUCHY_TOMATO_SHOW", "1") != "0" and drive != visible:
                     pad.show_user_screen("tomato", drive=drive)
@@ -422,23 +551,61 @@ def _serve_clock(commands: queue.Queue[str], clock: Clock) -> None:
                     print(f"ready {current}", flush=True)
                 visible = drive
                 shown = current
+            if with_pulse:
+                shown_pulse, pulse_drive, pulse_visible = _refresh_pulse(
+                    pad, pulse_slot, shown_pulse, pulse_drive, pulse_visible
+                )
             time.sleep(0.2)
 
 
-def clock_loop() -> None:
+def _refresh_pulse(
+    pad, pulse_slot: dict, shown_pulse: str, pulse_drive: str, pulse_visible: bool
+) -> tuple[str, str, bool]:
+    snapshot = pulse_slot.get("snapshot")
+    if snapshot is None or snapshot.key() == shown_pulse:
+        return shown_pulse, pulse_drive, pulse_visible
+    try:
+        path, drive = _save_with_ram_fallback(
+            lambda target: pad.user_screen_save("usage", build_usage_page(snapshot), drive=target),
+            pulse_drive,
+        )
+    except TouchyError as exc:
+        if exc.code_name != "IO_ERROR":
+            raise
+        print(
+            "flash write is stuck. Tap RST once, and do not hold BOOT. Retrying.",
+            flush=True,
+        )
+        return shown_pulse, pulse_drive, pulse_visible
+    print(f"saved {path}  {snapshot.summary}", flush=True)
+    for row_item in snapshot.rows:
+        print(f"  {row_item.name}  {row_item.value}", flush=True)
+    if not pulse_visible and os.environ.get("TOUCHY_PULSE_SHOW", "1") != "0":
+        pad.show_user_screen("usage", drive=drive)
+        pulse_visible = True
+        print(f"showing {path}", flush=True)
+    return snapshot.key(), drive, pulse_visible
+
+
+def clock_loop(with_pulse: bool = False) -> None:
     commands: queue.Queue[str] = queue.Queue()
     clock = Clock()
-    remain = os.environ.get("TOUCHY_TOMATO_REMAINING")
-    if remain:
-        clock.remaining = float(remain)
-    done = os.environ.get("TOUCHY_TOMATO_DONE")
-    if done:
-        clock.done = int(done)
-    if os.environ.get("TOUCHY_TOMATO_RUNNING") == "1":
-        clock.start()
+    if not _restore_clock(clock):
+        if with_pulse:
+            pulse_loop()
+            return
+        # Standalone clock starts at 25:00 paused.
     while True:
         try:
-            _serve_clock(commands, clock)
+            _serve_clock(commands, clock, with_pulse=with_pulse)
+        except TouchyError as exc:
+            if exc.code_name != "IO_ERROR":
+                raise
+            print(
+                "flash write is stuck. Tap RST once, and do not hold BOOT. Retrying.",
+                flush=True,
+            )
+            time.sleep(1)
         except Exception as exc:
             if not _link_lost(exc):
                 raise
@@ -458,7 +625,9 @@ def main() -> None:
     if args.command == "setup":
         setup()
     elif args.command == "pulse":
-        pulse_loop()
+        # Same USB link as the clock. Resume the countdown when one is in
+        # progress so Token Pulse does not leave the digits frozen.
+        clock_loop(with_pulse=True)
     elif args.command == "apps":
         with touchy_open() as pad:
             pad.client.screen_wake()
