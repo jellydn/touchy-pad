@@ -61,6 +61,8 @@ Leave this running. It uploads the tomato page again so the four buttons call ba
 
 `just up` writes firmware. It does not draw this clock. Prev and Next open `F:host/uscr/tomato.pb`. Until the helper replaces that file, the page is the old picture: buttons, and no digits.
 
+If flash refuses the page write, the helper stores the same page in RAM and shows that copy. Prev and Next still walk the flash pages. Tap RST once, and do not hold BOOT. The helper connects again and writes the tomato page to flash.
+
 If the data cable is unplugged or the pad resets, the helper waits and opens the pad again, keeping the same countdown. Plug the data cable back in and leave the process up.
 
 - Focus is 25:00. Short break is 5:00. The fourth focus is followed by a 15:00 long break.

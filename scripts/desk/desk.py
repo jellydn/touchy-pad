@@ -48,6 +48,7 @@ from touchy_pad.api import (
     style,
     touchy_open,
 )
+from touchy_pad.api.errors import TouchyError
 from touchy_pad.api.images import make_touchy_png
 from touchy_pad.api.macros import key_tap, set_delay
 from touchy_pad.pages.trackpad import build as build_trackpad
@@ -289,16 +290,20 @@ def _link_lost(exc: BaseException) -> bool:
     return False
 
 
-def _save_tomato(pad, commands: queue.Queue[str], clock: Clock) -> str:
-    return pad.user_screen_save("tomato", build_tomato_page(commands, clock))
+def _save_tomato(pad, commands: queue.Queue[str], clock: Clock, drive: str) -> str:
+    return pad.user_screen_save("tomato", build_tomato_page(commands, clock), drive=drive)
 
 
 def _serve_clock(commands: queue.Queue[str], clock: Clock) -> None:
     # Rewriting tomato.pb rebuilds the page body in place, which is what
     # makes the label text change. set_property does not reach a label
     # inside a swapped user page.
+    # Flash can refuse every F: write after a close with the wrong handle.
+    # RAM (R:) still accepts the page, so the digits can show until a reset
+    # clears that transaction and the next connection writes flash again.
     shown = ""
-    visible = False
+    drive = "F"
+    visible = ""
     # A page rebuild can deliver a click that was already on the glass.
     ignore_until = time.monotonic() + 1.5
     last_poke = 0.0
@@ -307,16 +312,6 @@ def _serve_clock(commands: queue.Queue[str], clock: Clock) -> None:
         print(f"board {info.board_name}  firmware {info.firmware_version_str}", flush=True)
         pad.client.screen_wake()
         print("backlight on", flush=True)
-        path = _save_tomato(pad, commands, clock)
-        print(f"saved {path}", flush=True)
-        if os.environ.get("TOUCHY_TOMATO_SHOW", "1") != "0":
-            pad.show_user_screen("tomato")
-            print(f"showing {path}", flush=True)
-            visible = True
-        else:
-            print("tomato page saved; current page left up", flush=True)
-        shown = f"{_fmt(clock.remaining)} {clock.status()}"
-        print(f"ready {shown}", flush=True)
         while True:
             thread = pad._thread
             if thread is not None and not thread.is_alive() and not pad._stop.is_set():
@@ -350,12 +345,32 @@ def _serve_clock(commands: queue.Queue[str], clock: Clock) -> None:
                 print(f"phase {item}", flush=True)
                 threading.Thread(target=_chime, args=(item,), daemon=True).start()
             current = f"{_fmt(clock.remaining)} {clock.status()}"
-            if current != shown:
-                path = _save_tomato(pad, commands, clock)
-                if visible:
-                    print(f"tick {current}", flush=True)
+            if current != shown or drive != visible:
+                try:
+                    path = _save_tomato(pad, commands, clock, drive)
+                except TouchyError as exc:
+                    if drive == "F" and exc.code_name == "IO_ERROR":
+                        print(
+                            "flash write is stuck. Showing the clock from RAM. "
+                            "Tap RST once, and do not hold BOOT, so this page can be stored.",
+                            flush=True,
+                        )
+                        drive = "R"
+                        path = _save_tomato(pad, commands, clock, "R")
+                    else:
+                        raise
+                print(f"saved {path}", flush=True)
+                if os.environ.get("TOUCHY_TOMATO_SHOW", "1") != "0" and drive != visible:
+                    pad.show_user_screen("tomato", drive=drive)
+                    ignore_until = time.monotonic() + 1.5
+                    print(f"showing {path}", flush=True)
+                elif not visible:
+                    print("tomato page saved; current page left up", flush=True)
                 else:
-                    print(f"saved {path}", flush=True)
+                    print(f"tick {current}", flush=True)
+                if not shown:
+                    print(f"ready {current}", flush=True)
+                visible = drive
                 shown = current
             time.sleep(0.2)
 
