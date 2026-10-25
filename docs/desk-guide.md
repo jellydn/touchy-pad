@@ -57,9 +57,11 @@ cd app
 poetry run python ../scripts/desk/desk.py clock
 ```
 
-Leave this running. It uploads the tomato page again so the four buttons call back into this process, then rewrites the clock picture once a second.
+Leave this running. It uploads the tomato page again so the four buttons call back into this process, then rewrites the page once a second so the time label changes. The time is a label, same as the buttons. A bitmap clock face was uploaded before and did not show on this panel: the image was decoded, and its box collapsed, so only the buttons stayed on screen.
 
-If the data cable is unplugged or the pad resets, the picture write fails and the digits freeze on the last second that got through. The helper now waits and opens the pad again, keeping the same countdown. The old helper exited on that error, which is why a running clock stopped at the last good second and the four buttons went dead. Plug the data cable back in and leave the process up.
+`just up` writes firmware. It does not draw this clock. Prev and Next open `F:host/uscr/tomato.pb`. Until the helper replaces that file, the page is the old picture: buttons, and no digits.
+
+If the data cable is unplugged or the pad resets, the helper waits and opens the pad again, keeping the same countdown. Plug the data cable back in and leave the process up.
 
 - Focus is 25:00. Short break is 5:00. The fourth focus is followed by a 15:00 long break.
 - **Start** runs the current phase. **Pause** holds it. **Skip** jumps to the next phase and keeps the running or paused state. **Reset** returns to a paused 25:00 and clears the count.
@@ -67,7 +69,7 @@ If the data cable is unplugged or the pad resets, the picture write fails and th
 
 `TOUCHY_TOMATO_SHOW=0` saves the page and leaves whichever page is on screen. The default is to switch to the tomato page.
 
-The clock counts in this process. The picture updates in place, so the digits move without changing pages. Quit the process and the last time stays on screen.
+The clock counts in this process. Once a second it writes the page again, and the pad rebuilds that body so the digits change. Quit the process and the last time stays on screen.
 
 ## Trackpad
 

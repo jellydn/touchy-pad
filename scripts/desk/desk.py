@@ -28,11 +28,10 @@ import threading
 import time
 
 import usb.core
-from PIL import Image, ImageDraw, ImageFont
 
 from touchy_pad.api import (
-    ImageSource,
     Layer,
+    TextAlign,
     build_default_screen,
     button,
     cell,
@@ -41,10 +40,11 @@ from touchy_pad.api import (
     grow,
     hid_keys,
     host_action,
-    image,
+    label,
     macro_action,
     protobuf,
     row,
+    spacer,
     style,
     touchy_open,
 )
@@ -74,26 +74,16 @@ APPS = [
 FOCUS_S = 25 * 60
 SHORT_S = 5 * 60
 LONG_S = 15 * 60
-FACE_W = 480
-FACE_H = 150
-BG = (26, 26, 46)
-TOMATO = (226, 61, 40)
-WHITE = (255, 255, 255)
-CREAM = (242, 210, 196)
 PHASE_LABEL = {"focus": "Focus", "short": "Short break", "long": "Long break"}
-
-_FONT_TITLE = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 22)
-_FONT_CLOCK = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 64)
-_FONT_STATUS = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 20)
 
 
 def build_apps_page() -> protobuf.Widget:
     page = Layer(layout=grid(cols=4, rows=2, gap=8))
-    for i, (wid, label, key) in enumerate(APPS):
+    for i, (wid, caption, key) in enumerate(APPS):
         page += cell(
             button(
                 wid,
-                text=label,
+                text=caption,
                 on_click=macro_action([set_delay(40), key_tap(key, HYPER)]),
                 style=style(font_size=16),
             ),
@@ -189,24 +179,51 @@ class Clock:
         return "Break over. Focus."
 
 
-def render_face(clock: Clock) -> Image.Image:
-    img = Image.new("RGB", (FACE_W, FACE_H), BG)
-    draw = ImageDraw.Draw(img)
-    draw.text((FACE_W / 2, 16), "Tomato", font=_FONT_TITLE, fill=TOMATO, anchor="mt")
-    draw.text((FACE_W / 2, 48), _fmt(clock.remaining), font=_FONT_CLOCK, fill=WHITE, anchor="mt")
-    draw.text((FACE_W / 2, 122), clock.status(), font=_FONT_STATUS, fill=CREAM, anchor="mt")
-    return img
-
-
-def build_tomato_page(commands: queue.Queue[str], face: ImageSource) -> protobuf.Widget:
+def build_tomato_page(commands: queue.Queue[str], clock: Clock) -> protobuf.Widget:
     def enqueue(name: str):
         def _on_event(_evt) -> None:
             commands.put(name)
 
         return _on_event
 
-    page = Layer(layout=col(gap=8))
-    page += grow(image("face", face), x=1, y=1)
+    # Labels, not a bitmap. The four buttons below are labels too, and
+    # those are the widgets that actually show on this panel. The clock
+    # face image uploaded to T: but never appeared. Montserrat 30 is the
+    # largest font this firmware has.
+    page = Layer(layout=col(gap=6))
+    page += grow(spacer("clock_above"), y=1)
+    page += grow(
+        label(
+            "title",
+            "Tomato",
+            font_size=16,
+            text_align=TextAlign.CENTER,
+            style=style(text_color=0xE23D28),
+        ),
+        x=1,
+    )
+    page += grow(
+        label(
+            "clock",
+            _fmt(clock.remaining),
+            font_size=30,
+            text_align=TextAlign.CENTER,
+            rect=protobuf.Rect(h=48),
+            style=style(text_color=0xFFFFFF),
+        ),
+        x=1,
+    )
+    page += grow(
+        label(
+            "status",
+            clock.status(),
+            font_size=16,
+            text_align=TextAlign.CENTER,
+            style=style(text_color=0xF2D2C4),
+        ),
+        x=1,
+    )
+    page += grow(spacer("clock_below"), y=1)
     controls = Layer(layout=row(gap=8))
     for wid, text in (
         ("start", "Start"),
@@ -249,7 +266,7 @@ def setup() -> None:
         print("saved F:host/uscr/apps.pb", flush=True)
         # Tomato body is uploaded again by `clock`, which owns the buttons.
         # Save a still face here so the page exists before that process starts.
-        pad.user_screen_save("tomato", build_tomato_page(queue.Queue(), ImageSource(render_face(Clock()))))
+        pad.user_screen_save("tomato", build_tomato_page(queue.Queue(), Clock()))
         print("saved F:host/uscr/tomato.pb", flush=True)
         pad.show_user_screen("apps")
         print("showing apps", flush=True)
@@ -272,20 +289,27 @@ def _link_lost(exc: BaseException) -> bool:
     return False
 
 
+def _save_tomato(pad, commands: queue.Queue[str], clock: Clock) -> str:
+    return pad.user_screen_save("tomato", build_tomato_page(commands, clock))
+
+
 def _serve_clock(commands: queue.Queue[str], clock: Clock) -> None:
-    # A new source each connection. The previous one stays bound to the
-    # dead USB handle, and user_screen_save only harvests sources that
-    # are still pending.
-    face = ImageSource(lambda: render_face(clock))
+    # Rewriting tomato.pb rebuilds the page body in place, which is what
+    # makes the label text change. set_property does not reach a label
+    # inside a swapped user page.
     shown = ""
+    visible = False
     with touchy_open() as pad:
         info = pad.board_info
         print(f"board {info.board_name}  firmware {info.firmware_version_str}", flush=True)
-        path = pad.user_screen_save("tomato", build_tomato_page(commands, face))
+        pad.client.screen_wake()
+        print("backlight on", flush=True)
+        path = _save_tomato(pad, commands, clock)
         print(f"saved {path}", flush=True)
         if os.environ.get("TOUCHY_TOMATO_SHOW", "1") != "0":
             pad.show_user_screen("tomato")
-            print("showing tomato", flush=True)
+            print(f"showing {path}", flush=True)
+            visible = True
         else:
             print("tomato page saved; current page left up", flush=True)
         shown = f"{_fmt(clock.remaining)} {clock.status()}"
@@ -315,9 +339,12 @@ def _serve_clock(commands: queue.Queue[str], clock: Clock) -> None:
                 threading.Thread(target=_chime, args=(item,), daemon=True).start()
             current = f"{_fmt(clock.remaining)} {clock.status()}"
             if current != shown:
-                face.update()
+                path = _save_tomato(pad, commands, clock)
+                if visible:
+                    print(f"tick {current}", flush=True)
+                else:
+                    print(f"saved {path}", flush=True)
                 shown = current
-                print(f"tick {current}", flush=True)
             time.sleep(0.2)
 
 

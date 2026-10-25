@@ -29,7 +29,7 @@ A 25-minute focus timer. A short break is 5 minutes. After four focus sessions t
 
 ![Tomato page](docs/images/desk-tomato.png)
 
-The digits are a picture that the host rewrites each second. Leave this process running:
+The digits are a label. The helper rewrites the page once a second so the number changes. Leave this process running:
 
 ```bash
 cd app
