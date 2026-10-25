@@ -674,6 +674,85 @@ up:
             --chip "$chip" write-flash "${args[@]}"
     )
 
+# Host side of the four desk pages.
+# Apps: Tuna. Usage: CodexBar on 127.0.0.1:8899. Tomato and Usage share
+# one USB link, so this runs `pulse` (it keeps the countdown). Trackpad
+# needs no host process. Leave this running. Ctrl-C stops the USB helper.
+dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if pgrep -xq Tuna >/dev/null 2>&1; then
+        echo "Tuna is already running"
+    elif [ "$(uname -s)" = Darwin ] && [ -d /Applications/Tuna.app ]; then
+        open -a Tuna
+        echo "started Tuna"
+    elif command -v tuna >/dev/null 2>&1; then
+        nohup tuna >/tmp/touchy-tuna.log 2>&1 &
+        echo "started tuna (log: /tmp/touchy-tuna.log)"
+    else
+        echo "error: Tuna is not installed. https://tunaformac.com/" >&2
+        exit 1
+    fi
+
+    # 8899 stays off the usual 8080/3000/8000 dev ports.
+    codexbar_port=8899
+    export CODEXBAR_URL="http://127.0.0.1:${codexbar_port}"
+    codexbar_up() {
+        curl -s -o /dev/null --max-time 2 "$CODEXBAR_URL/"
+    }
+    if codexbar_up; then
+        echo "CodexBar is already listening on ${CODEXBAR_URL}"
+    else
+        if ! command -v codexbar >/dev/null 2>&1; then
+            echo "error: codexbar is not on PATH. https://github.com/steipete/CodexBar" >&2
+            exit 1
+        fi
+        nohup codexbar serve --host 127.0.0.1 --port "$codexbar_port" --refresh-interval 60 --identity redacted \
+            >/tmp/touchy-codexbar.log 2>&1 &
+        echo "started CodexBar on ${CODEXBAR_URL} (log: /tmp/touchy-codexbar.log)"
+        ready=0
+        for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+            if codexbar_up; then
+                ready=1
+                break
+            fi
+            sleep 0.5
+        done
+        if [ "$ready" -ne 1 ]; then
+            echo "error: CodexBar did not open ${CODEXBAR_URL}. See /tmp/touchy-codexbar.log" >&2
+            exit 1
+        fi
+    fi
+
+    if pgrep -f 'scripts/desk/desk.py pulse' >/dev/null 2>&1; then
+        echo "pulse is already running (Token Pulse and the tomato countdown)"
+        echo "trackpad needs no host process"
+        exit 0
+    fi
+
+    export DYLD_LIBRARY_PATH="/opt/homebrew/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+    if [ -n "${TOUCHY_PYTHON:-}" ]; then
+        if [ ! -x "$TOUCHY_PYTHON" ]; then
+            echo "error: TOUCHY_PYTHON=$TOUCHY_PYTHON is not executable" >&2
+            exit 1
+        fi
+        echo "pulse via $TOUCHY_PYTHON"
+        exec "$TOUCHY_PYTHON" scripts/desk/desk.py pulse
+    fi
+    if command -v poetry >/dev/null 2>&1 && poetry env info -p --directory app >/dev/null 2>&1; then
+        echo "pulse via poetry"
+        exec env -u VIRTUAL_ENV poetry run --directory app python ../scripts/desk/desk.py pulse
+    fi
+    for candidate in /tmp/touchy-host-venv/bin/python app/.venv/bin/python; do
+        if [ -x "$candidate" ] && "$candidate" -c 'import touchy_pad' >/dev/null 2>&1; then
+            echo "pulse via $candidate"
+            exec "$candidate" scripts/desk/desk.py pulse
+        fi
+    done
+    echo "error: no host Python can import touchy_pad. Set TOUCHY_PYTHON, or fix Poetry in app/." >&2
+    exit 1
+
 # setup for common devboards
 hw-543:
     just firmware-reconfigure jc4827w543
