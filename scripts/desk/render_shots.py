@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Draw the three desk pages at the panel size.
+"""Draw the desk pages at the panel size.
 
 The JC4827 has no screen-capture command. These frames match the pages
-uploaded by desk.py: 480×272, stored here at 2× so the README stays sharp.
+from desk.py: 480×272, stored here at 2× so the README stays sharp.
 """
 
 from __future__ import annotations
@@ -21,9 +21,12 @@ PANEL = (26, 26, 46)
 BTN = (28, 28, 58)
 BTN_EDGE = (70, 70, 120)
 WHITE = (255, 255, 255)
-MUTED = (180, 186, 210)
+MUTED = (161, 161, 170)
 TOMATO = (226, 61, 40)
 CREAM = (242, 210, 196)
+TEAL = (45, 212, 191)
+INK = (244, 244, 245)
+ICONS = Path(__file__).resolve().parent / "icons"
 
 FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
 FONT_BOLD = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
@@ -49,19 +52,41 @@ def chrome(base: Image.Image) -> ImageDraw.ImageDraw:
 def shot_apps() -> Image.Image:
     img = Image.new("RGB", (W, H), BG)
     chrome(img)
-    draw = ImageDraw.Draw(img)
-    labels = ["Zen", "Zed", "Amp", "Ghostty", "Slack", "Mail", "Grok", "Spotify"]
-    gap = 14
-    top = 92
+    names = ["zen", "zed", "amp", "ghostty", "slack", "mail", "grok", "spotify"]
+    gap = 12
+    top = 96
     left = 16
     cols, rows = 4, 2
     bw = (W - left * 2 - gap * (cols - 1)) // cols
     bh = (H - top - 16 - gap) // rows
-    for i, label in enumerate(labels):
+    for i, name in enumerate(names):
+        icon = Image.open(ICONS / f"{name}.png").convert("RGBA")
+        icon.thumbnail((bw - 24, bh - 24), Image.Resampling.LANCZOS)
         c, r = i % cols, i // cols
-        x = left + c * (bw + gap)
-        y = top + r * (bh + gap)
-        rounded_button(draw, (x, y, x + bw, y + bh), label, 32)
+        x = left + c * (bw + gap) + (bw - icon.width) // 2
+        y = top + r * (bh + gap) + (bh - icon.height) // 2
+        img.paste(icon, (x, y), icon)
+    return img
+
+
+def shot_usage() -> Image.Image:
+    img = Image.new("RGB", (W, H), BG)
+    chrome(img)
+    draw = ImageDraw.Draw(img)
+    draw.text((W / 2, 96), "Token Pulse", font=font(32, bold=True), fill=WHITE, anchor="mt")
+    draw.text((W / 2, 142), "30 days  761k tokens", font=font(28), fill=MUTED, anchor="mt")
+    rows = [
+        ("Copilot", "22% left", TEAL),
+        ("Grok", "35% left", TEAL),
+        ("Zed", "66% left", TEAL),
+        ("Amp", "91% left", TEAL),
+        ("Codex", "99% left, 646 cr", TEAL),
+    ]
+    y = 196
+    for name, value, color in rows:
+        draw.text((36, y), name, font=font(28), fill=INK, anchor="lt")
+        draw.text((W - 36, y), value, font=font(28), fill=color, anchor="rt")
+        y += 52
     return img
 
 
@@ -69,11 +94,9 @@ def shot_tomato() -> Image.Image:
     img = Image.new("RGB", (W, H), BG)
     chrome(img)
     draw = ImageDraw.Draw(img)
-    face = (16, 92, W - 16, 400)
-    draw.rounded_rectangle(face, radius=18, fill=PANEL)
-    draw.text((W / 2, 120), "Tomato", font=font(36, bold=True), fill=TOMATO, anchor="mt")
-    draw.text((W / 2, 180), "25:00", font=font(92, bold=True), fill=WHITE, anchor="mt")
-    draw.text((W / 2, 330), "Focus - 0/4 - paused", font=font(28), fill=CREAM, anchor="mt")
+    draw.text((W / 2, 110), "Tomato", font=font(32, bold=True), fill=TOMATO, anchor="mt")
+    draw.text((W / 2, 168), "25:00", font=font(92, bold=True), fill=WHITE, anchor="mt")
+    draw.text((W / 2, 290), "Focus - 0/4 - paused", font=font(28), fill=CREAM, anchor="mt")
     labels = ["Start", "Pause", "Skip", "Reset"]
     gap = 14
     top = 420
@@ -103,6 +126,7 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     shots = {
         "desk-apps.png": shot_apps(),
+        "desk-usage.png": shot_usage(),
         "desk-tomato.png": shot_tomato(),
         "desk-trackpad.png": shot_trackpad(),
     }
