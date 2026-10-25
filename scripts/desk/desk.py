@@ -422,6 +422,9 @@ def clock_loop() -> None:
     remain = os.environ.get("TOUCHY_TOMATO_REMAINING")
     if remain:
         clock.remaining = float(remain)
+    done = os.environ.get("TOUCHY_TOMATO_DONE")
+    if done:
+        clock.done = int(done)
     if os.environ.get("TOUCHY_TOMATO_RUNNING") == "1":
         clock.start()
     while True:
