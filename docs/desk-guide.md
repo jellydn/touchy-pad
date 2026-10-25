@@ -2,7 +2,7 @@
 
 This is the setup that is on the pad: firmware from [geeksville/touchy-pad](https://github.com/geeksville/touchy-pad), then three pages loaded over USB.
 
-The script is [`scripts/desk/desk.py`](../scripts/desk/desk.py).
+The script is [`scripts/desk/desk.py`](../scripts/desk/desk.py). `just dev` starts the host side of every page: Tuna, CodexBar on `127.0.0.1:8899`, and `pulse` (Token Pulse and the tomato countdown on the one USB link). The trackpad needs nothing else. Leave `just dev` running.
 
 ## What you need
 
@@ -38,7 +38,7 @@ Prev and Next walk that directory in sorted order: **Apps**, **Tomato**, **Track
 `F:host/uscr/usage.pb` is a separate page. It is not part of `setup`. Start CodexBar, then leave the helper running:
 
 ```bash
-codexbar serve --host 127.0.0.1 --port 8080 --refresh-interval 60 --identity redacted
+codexbar serve --host 127.0.0.1 --port 8899 --refresh-interval 60 --identity redacted
 poetry run python ../scripts/desk/desk.py pulse
 ```
 
@@ -82,7 +82,7 @@ If the data cable is unplugged or the pad resets, the helper waits and opens the
 
 `TOUCHY_TOMATO_SHOW=0` saves the page and leaves whichever page is on screen. The default is to switch to the tomato page.
 
-The clock counts in this process. Once a second it writes the page again, and the pad rebuilds that body so the digits change. Quit the process and the last time stays on screen.
+The clock counts in this process. Once a second it writes the page again, and the pad rebuilds that body so the digits change. A failed flash write used to end the helper and leave the digits frozen. It now retries. `pulse` uses the same USB link and keeps this countdown going when a session is already on the glass. Quit the process and the last time stays on screen.
 
 ## Trackpad
 

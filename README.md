@@ -4,6 +4,12 @@ This fork is [geeksville/touchy-pad](https://github.com/geeksville/touchy-pad) o
 
 Four pages share one prev/next bar. The files sort `apps`, `tomato`, `trackpad`, `usage`.
 
+```bash
+just dev
+```
+
+That starts what the pages need and leaves it running. Tuna for the app keys. CodexBar and the `pulse` helper for Token Pulse and the tomato countdown. The trackpad needs no host process. Ctrl-C stops the USB helper. Do not start `clock` as well: the pad has one USB link.
+
 ## Apps
 
 Requires [Tuna](https://tunaformac.com/). No helper has to stay open after the page is stored.
@@ -36,7 +42,7 @@ A usage page in the same shape as [token-pulse](https://github.com/jellydn/token
 The helper polls CodexBar and rewrites the page when a number changes:
 
 ```bash
-codexbar serve --host 127.0.0.1 --port 8080 --refresh-interval 60 --identity redacted
+codexbar serve --host 127.0.0.1 --port 8899 --refresh-interval 60 --identity redacted
 cd app
 poetry run python ../scripts/desk/desk.py pulse
 ```
@@ -83,7 +89,7 @@ poetry run python ../scripts/desk/desk.py setup
 poetry run python ../scripts/desk/desk.py clock
 ```
 
-`setup` writes Apps, Tomato, and Trackpad, then shows **Apps**. Token Pulse is a separate `pulse` command. `clock` and `pulse` each hold the USB link, so run one of them at a time. Stop both before `setup`.
+`setup` writes Apps, Tomato, and Trackpad, then shows **Apps**. Token Pulse is a separate `pulse` command. The pad has one USB link, so `pulse` keeps the tomato countdown as well when that session is still running. Stop that process before `setup`.
 
 To write firmware, use a data cable, hold **BOOT**, tap **RST**, release **BOOT**, then `just up`. That lists `/dev/cu.*` and flashes the one USB serial port. `just` and `esptool` are the flash tools. Details are in the guide.
 
