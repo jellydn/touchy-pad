@@ -26,6 +26,7 @@ import subprocess
 import threading
 import time
 
+import usb.core
 from PIL import Image, ImageDraw, ImageFont
 
 from touchy_pad.api import (
@@ -253,9 +254,27 @@ def setup() -> None:
         print("showing apps", flush=True)
 
 
-def clock_loop() -> None:
-    commands: queue.Queue[str] = queue.Queue()
-    clock = Clock()
+def _link_lost(exc: BaseException) -> bool:
+    """True when the USB cable dropped or the pad is not plugged in."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, usb.core.USBError):
+            return True
+        if type(current).__name__ == "DeviceNotFoundError":
+            return True
+        errno = getattr(current, "errno", None)
+        if isinstance(current, OSError) and errno in {5, 19}:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _serve_clock(commands: queue.Queue[str], clock: Clock) -> None:
+    # A new source each connection. The previous one stays bound to the
+    # dead USB handle, and user_screen_save only harvests sources that
+    # are still pending.
     face = ImageSource(lambda: render_face(clock))
     shown = ""
     with touchy_open() as pad:
@@ -299,6 +318,22 @@ def clock_loop() -> None:
                 shown = current
                 print(f"tick {current}", flush=True)
             time.sleep(0.2)
+
+
+def clock_loop() -> None:
+    commands: queue.Queue[str] = queue.Queue()
+    clock = Clock()
+    while True:
+        try:
+            _serve_clock(commands, clock)
+        except Exception as exc:
+            if not _link_lost(exc):
+                raise
+            print(
+                f"pad link lost ({exc}). Check the USB data cable. Retrying.",
+                flush=True,
+            )
+            time.sleep(1)
 
 
 def main() -> None:

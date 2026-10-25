@@ -38,6 +38,8 @@ poetry run python ../scripts/desk/desk.py clock
 
 Quit it and the page stays, but the time freezes and the four buttons stop. A phase change plays a sound and posts a macOS notification.
 
+The clock was stopping because the USB link dropped and that process exited. It counted in the host, then a cable unplug made the next picture write fail (`USBError: No such device`), and the helper had no retry. It now waits for the pad and keeps the same countdown. Use a USB data cable in the board USB-C port. A charge-only cable never connects.
+
 ## Trackpad
 
 The multitouch touchpad from `touchy init`, with the ITMAN mark as the backdrop.

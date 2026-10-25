@@ -57,6 +57,8 @@ poetry run python ../scripts/desk/desk.py clock
 
 Leave this running. It uploads the tomato page again so the four buttons call back into this process, then rewrites the clock picture once a second.
 
+If the data cable is unplugged or the pad resets, the picture write fails and the digits freeze on the last second that got through. The helper now waits and opens the pad again, keeping the same countdown. The old helper exited on that error, which is why a running clock stopped at the last good second and the four buttons went dead. Plug the data cable back in and leave the process up.
+
 - Focus is 25:00. Short break is 5:00. The fourth focus is followed by a 15:00 long break.
 - **Start** runs the current phase. **Pause** holds it. **Skip** jumps to the next phase and keeps the running or paused state. **Reset** returns to a paused 25:00 and clears the count.
 - When a phase ends, the Mac plays `Glass.aiff` and shows a notification titled Tomato.
