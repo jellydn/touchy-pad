@@ -2,11 +2,13 @@
 
 This fork is [geeksville/touchy-pad](https://github.com/geeksville/touchy-pad) on a Guition JC4827W543. The panel is an ESP32-S3 with a 4.3 inch 480×272 screen, an NV3041A display, and a GT911 touch sensor. USB shows up as **Touchy-Pad**.
 
-Three pages share one prev/next bar. The files sort `apps`, `tomato`, `trackpad`.
+Four pages share one prev/next bar. The files sort `apps`, `tomato`, `trackpad`, `usage`.
 
 ## Apps
 
-Eight keys are the app icons, with no extra background. The transparent corners show the screen. A tap sends the Hyper chord (`ctrl+opt+shift+cmd` plus a key) that Tuna already uses. Tuna must be running. No helper has to stay open for these keys.
+Requires [Tuna](https://tunaformac.com/). No helper has to stay open after the page is stored.
+
+Eight keys are the app icons, with no extra background. The transparent corners show the screen. A tap sends the Hyper chord (`ctrl+opt+shift+cmd` plus a key) that Tuna already uses.
 
 ![Apps page](docs/images/desk-apps.png)
 
@@ -23,7 +25,27 @@ Eight keys are the app icons, with no extra background. The transparent corners 
 
 The chords come from `~/Projects/dotfiles` `macos/.config/tuna/config.toml` on `master`. Combo mode is off in that file, so only the `hotkeys.custom` entries are used.
 
+## Token Pulse
+
+Requires [CodexBar](https://github.com/steipete/CodexBar) and the `pulse` helper. The pad cannot call `127.0.0.1`, so both have to keep running.
+
+![Token Pulse page](docs/images/desk-usage.png)
+
+A usage page in the same shape as [token-pulse](https://github.com/jellydn/token-pulse). It lists the providers you are using. Each row is the remaining percent. A credit balance is added on that same row when the provider has one. The 30-day token total counts that same set. Under 20% left is rose. The rest is teal.
+
+The helper polls CodexBar and rewrites the page when a number changes:
+
+```bash
+codexbar serve --host 127.0.0.1 --port 8080 --refresh-interval 60 --identity redacted
+cd app
+poetry run python ../scripts/desk/desk.py pulse
+```
+
+Leave both running. Quit `pulse` and the last numbers stay on the glass.
+
 ## Tomato
+
+Requires the `clock` helper. macOS uses `afplay` and `osascript` for the chime. Quit the helper and the buttons stop.
 
 A 25-minute focus timer. A short break is 5 minutes. After four focus sessions the break is 15 minutes. **Start**, **Pause**, **Skip**, and **Reset** sit under the clock.
 
@@ -42,6 +64,8 @@ The clock was stopping because the USB link dropped and that process exited. It 
 
 ## Trackpad
 
+Requires no extra tool. The firmware sends the pointer over USB HID.
+
 The multitouch touchpad from `touchy init`, with the ITMAN mark as the backdrop.
 
 ![Trackpad page](docs/images/desk-trackpad.png)
@@ -59,8 +83,8 @@ poetry run python ../scripts/desk/desk.py setup
 poetry run python ../scripts/desk/desk.py clock
 ```
 
-`setup` writes all three pages and shows **Apps**. `clock` has to stay running for the tomato page. Stop `clock` before `setup`. Both use the same USB command link.
+`setup` writes Apps, Tomato, and Trackpad, then shows **Apps**. Token Pulse is a separate `pulse` command. `clock` and `pulse` each hold the USB link, so run one of them at a time. Stop both before `setup`.
 
-To write firmware, use a data cable, hold **BOOT**, tap **RST**, release **BOOT**, then `just up`. That lists `/dev/cu.*` and flashes the one USB serial port. Details are in the guide.
+To write firmware, use a data cable, hold **BOOT**, tap **RST**, release **BOOT**, then `just up`. That lists `/dev/cu.*` and flashes the one USB serial port. `just` and `esptool` are the flash tools. Details are in the guide.
 
-The pictures above are the three pages at the panel size (drawn at 2×). This board has no screen-capture command, so they are the layouts that are on the glass, not a photo of the LCD.
+The pictures above are the four pages at the panel size (drawn at 2×). This board has no screen-capture command, so they are the layouts that are on the glass, not a photo of the LCD.

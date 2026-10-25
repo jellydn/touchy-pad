@@ -10,7 +10,7 @@ The script is [`scripts/desk/desk.py`](../scripts/desk/desk.py).
 - While the app is running the Mac names the board **Touchy-Pad** / Geeksville. That is the link the pages and the tomato clock use. It is not a serial port, so `ls /dev/cu.*` does not list the board.
 - To flash, hold **BOOT**, tap **RST**, and release **BOOT**. The ROM serial port then appears as `/dev/cu.usbmodem*`. `just up` lists `/dev/cu.*` and writes the built image to that port.
 - Python 3.11–3.14 and Poetry, from the `app` directory. Pillow is already a dependency.
-- Tuna running, with the hyper chords in `~/Projects/dotfiles/macos/.config/tuna/config.toml`. Hyper is `ctrl+opt+shift+cmd`.
+- [Tuna](https://tunaformac.com/) running, with the hyper chords in `~/Projects/dotfiles/macos/.config/tuna/config.toml`. Hyper is `ctrl+opt+shift+cmd`.
 - macOS, for the tomato chime (`afplay` and `osascript`) and the fonts the clock face uses.
 
 ## Load the three pages
@@ -31,7 +31,18 @@ poetry run python ../scripts/desk/desk.py setup
 4. `F:host/uscr/apps.pb` — the eight app buttons.
 5. `F:host/uscr/tomato.pb` — the clock face at 25:00, paused, plus Start / Pause / Skip / Reset.
 
-Prev and Next walk that directory in sorted order: **Apps**, **Tomato**, **Trackpad**, then back to Apps.
+Prev and Next walk that directory in sorted order: **Apps**, **Tomato**, **Trackpad**, **Usage**, then back to Apps.
+
+## Token Pulse
+
+`F:host/uscr/usage.pb` is a separate page. It is not part of `setup`. Start CodexBar, then leave the helper running:
+
+```bash
+codexbar serve --host 127.0.0.1 --port 8080 --refresh-interval 60 --identity redacted
+poetry run python ../scripts/desk/desk.py pulse
+```
+
+The page shows a 30-day token total and up to six providers that are in use. Empty plans stay off the list. The tightest limits come first. A credit balance is added beside the percent when that provider has one. The helper polls once a minute and rewrites the page only when a figure changes.
 
 ## App buttons
 
