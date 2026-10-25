@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Three pages for the JC4827W543 desk pad.
+"""Desk pages for the JC4827W543.
+
+Pages, in prev/next order: apps, tomato, trackpad, usage.
 
 ``setup`` uploads the chrome, the ITMAN logo, and the three page bodies:
 
@@ -14,6 +16,11 @@ page can be refreshed without touching the other two.
 ``clock`` keeps the tomato digits moving. Leave that process running.
 The app keys do not need it. Tuna must be running for those keys,
 because each one sends the hyper chord from ``config.toml``.
+
+``pulse`` writes the Token Pulse page from a local CodexBar server.
+Leave that process running too. Start the server first::
+
+    codexbar serve --host 127.0.0.1 --port 8080 --refresh-interval 60 --identity redacted
 
 From the ``app`` directory::
 
@@ -59,6 +66,8 @@ from touchy_pad.api.errors import TouchyError
 from touchy_pad.api.images import make_touchy_png
 from touchy_pad.api.macros import key_tap, set_delay
 from touchy_pad.pages.trackpad import build as build_trackpad
+
+from pulse import pulse_loop
 
 LOGO_PATH = "F:host/images/touchy.png"
 SOUND = "/System/Library/Sounds/Glass.aiff"
@@ -444,10 +453,12 @@ def main() -> None:
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("touchy_pad.device").setLevel(logging.INFO)
     parser = argparse.ArgumentParser(description="JC4827 desk pages")
-    parser.add_argument("command", choices=("setup", "clock", "apps"))
+    parser.add_argument("command", choices=("setup", "clock", "apps", "pulse"))
     args = parser.parse_args()
     if args.command == "setup":
         setup()
+    elif args.command == "pulse":
+        pulse_loop()
     elif args.command == "apps":
         with touchy_open() as pad:
             pad.client.screen_wake()
