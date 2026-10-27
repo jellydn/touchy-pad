@@ -2,13 +2,13 @@
 
 This fork is [geeksville/touchy-pad](https://github.com/geeksville/touchy-pad) on a Guition JC4827W543. The panel is an ESP32-S3 with a 4.3 inch 480×272 screen, an NV3041A display, and a GT911 touch sensor. USB shows up as **Touchy-Pad**.
 
-Four pages share one prev/next bar. The files sort `apps`, `tomato`, `trackpad`, `usage`.
+Five pages share one prev/next bar. The files sort `apps`, `power`, `tomato`, `trackpad`, `usage`.
 
 ```bash
 just dev
 ```
 
-That starts what the pages need and leaves it running. Tuna for the app keys. CodexBar and the `pulse` helper for Token Pulse and the tomato countdown. The trackpad needs no host process. Ctrl-C stops the USB helper. Do not start `clock` as well: the pad has one USB link.
+That starts what the pages need and leaves it running. Tuna for the app keys. CodexBar and the `pulse` helper for Token Pulse, the tomato countdown, and the power keys. The trackpad needs no host process. Ctrl-C stops the USB helper. Do not start `clock` as well: the pad has one USB link.
 
 ## Apps
 
@@ -30,6 +30,16 @@ Eight keys are the app icons, with no extra background. The transparent corners 
 | Spotify | Spotify | Hyper+R |
 
 The chords come from `~/Projects/dotfiles` `macos/.config/tuna/config.toml` on `master`. Combo mode is off in that file, so only the `hotkeys.custom` entries are used.
+
+## Power
+
+Requires the `pulse` helper. The keys call macOS through that process. Quit it and the buttons stop.
+
+![Power page](docs/images/desk-power.png)
+
+Sleep, Lock, and Display run on the first tap. Display turns the screen off and leaves the Mac awake. Log out, Restart, and Shut down are rose: tap once, read the line, then tap that key again within 5 seconds.
+
+The first time, macOS may ask to let the helper control System Events. Lock sends Ctrl-Command-Q, so the helper also needs Accessibility if that prompt appears.
 
 ## Token Pulse
 

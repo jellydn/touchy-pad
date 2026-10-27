@@ -25,6 +25,7 @@ MUTED = (161, 161, 170)
 TOMATO = (226, 61, 40)
 CREAM = (242, 210, 196)
 TEAL = (45, 212, 191)
+ROSE = (251, 113, 133)
 INK = (244, 244, 245)
 ICONS = Path(__file__).resolve().parent / "icons"
 
@@ -109,6 +110,37 @@ def shot_tomato() -> Image.Image:
     return img
 
 
+def shot_power() -> Image.Image:
+    img = Image.new("RGB", (W, H), BG)
+    chrome(img)
+    draw = ImageDraw.Draw(img)
+    draw.text((W / 2, 96), "Power", font=font(32, bold=True), fill=WHITE, anchor="mt")
+    draw.text((W / 2, 148), "Rose keys need a second tap", font=font(24), fill=MUTED, anchor="mt")
+    labels = [
+        ("Sleep", False),
+        ("Lock", False),
+        ("Display", False),
+        ("Log out", True),
+        ("Restart", True),
+        ("Shut down", True),
+    ]
+    gap = 14
+    top = 190
+    left = 16
+    cols = 2
+    bw = (W - left * 2 - gap) // cols
+    bh = 100
+    for i, (label, danger) in enumerate(labels):
+        c, r = i % cols, i // cols
+        x = left + c * (bw + gap)
+        y = top + r * (bh + gap)
+        color = ROSE if danger else WHITE
+        rounded_button(draw, (x, y, x + bw, y + bh), label, 28)
+        if danger:
+            draw.text(((x + x + bw) / 2, (y + y + bh) / 2), label, font=font(28), fill=color, anchor="mm")
+    return img
+
+
 def shot_trackpad() -> Image.Image:
     img = Image.new("RGB", (W, H), BG)
     chrome(img)
@@ -129,6 +161,7 @@ def main() -> None:
         "desk-usage.png": shot_usage(),
         "desk-tomato.png": shot_tomato(),
         "desk-trackpad.png": shot_trackpad(),
+        "desk-power.png": shot_power(),
     }
     for name, image in shots.items():
         path = OUT / name

@@ -1,8 +1,8 @@
 # Desk pages on the JC4827W543
 
-This is the setup that is on the pad: firmware from [geeksville/touchy-pad](https://github.com/geeksville/touchy-pad), then three pages loaded over USB.
+This is the setup that is on the pad: firmware from [geeksville/touchy-pad](https://github.com/geeksville/touchy-pad), then the desk pages loaded over USB.
 
-The script is [`scripts/desk/desk.py`](../scripts/desk/desk.py). `just dev` starts the host side of every page: Tuna, CodexBar on `127.0.0.1:8899`, and `pulse` (Token Pulse and the tomato countdown on the one USB link). The trackpad needs nothing else. Leave `just dev` running.
+The script is [`scripts/desk/desk.py`](../scripts/desk/desk.py). `just dev` starts the host side of every page: Tuna, CodexBar on `127.0.0.1:8899`, and `pulse` (Token Pulse, the tomato countdown, and the power keys on the one USB link). The trackpad needs nothing else. Leave `just dev` running.
 
 ## What you need
 
@@ -13,7 +13,7 @@ The script is [`scripts/desk/desk.py`](../scripts/desk/desk.py). `just dev` star
 - [Tuna](https://tunaformac.com/) running, with the hyper chords in `~/Projects/dotfiles/macos/.config/tuna/config.toml`. Hyper is `ctrl+opt+shift+cmd`.
 - macOS, for the tomato chime (`afplay` and `osascript`) and the fonts the clock face uses.
 
-## Load the three pages
+## Load the pages
 
 Stop a running `clock` process first. It holds the USB command link.
 
@@ -31,7 +31,13 @@ poetry run python ../scripts/desk/desk.py setup
 4. `F:host/uscr/apps.pb` — the eight app buttons.
 5. `F:host/uscr/tomato.pb` — the clock face at 25:00, paused, plus Start / Pause / Skip / Reset.
 
-Prev and Next walk that directory in sorted order: **Apps**, **Tomato**, **Trackpad**, **Usage**, then back to Apps.
+6. `F:host/uscr/power.pb` — Sleep, Lock, Display, Log out, Restart, and Shut down.
+
+Prev and Next walk that directory in sorted order: **Apps**, **Power**, **Tomato**, **Trackpad**, **Usage**, then back to Apps.
+
+## Power
+
+`pulse` uploads this page and keeps the buttons. Sleep, Lock, and Display run immediately. Display is `pmset displaysleepnow` (screen off, Mac still on). Log out, Restart, and Shut down wait for a second tap on that same key within 5 seconds. The status line says which one. Lock is the Ctrl-Command-Q shortcut. macOS may ask for permission to control System Events, and for Accessibility on the lock shortcut.
 
 ## Token Pulse
 
