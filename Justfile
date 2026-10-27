@@ -674,9 +674,9 @@ up:
             --chip "$chip" write-flash "${args[@]}"
     )
 
-# Host side of the four desk pages.
+# Host side of the five desk pages.
 # Apps: Tuna. Usage: CodexBar on 127.0.0.1:8899. Tomato and Usage share
-# one USB link, so this runs `pulse` (it keeps the countdown). Trackpad
+# one USB link, so this runs `pulse` (it keeps the countdown and the power keys). Trackpad
 # needs no host process. Leave this running. Ctrl-C stops the USB helper.
 dev:
     #!/usr/bin/env bash

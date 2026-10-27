@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Desk pages for the JC4827W543.
 
-Pages, in prev/next order: apps, tomato, trackpad, usage.
+Pages, in prev/next order: apps, power, tomato, trackpad, usage.
 
-``setup`` uploads the chrome, the ITMAN logo, and the three page bodies:
+``setup`` uploads the chrome, the ITMAN logo, and these page bodies:
 
 * ``F:host/uscr/apps.pb``    — eight Tuna hyper-key icon buttons
+* ``F:host/uscr/power.pb``   — sleep, lock, display, log out, restart, shut down
 * ``F:host/uscr/tomato.pb``  — tomato clock face and controls
 * ``F:host/uscr/trackpad.pb`` — multitouch trackpad on the logo
 
@@ -19,8 +20,8 @@ because each one sends the hyper chord from ``config.toml``.
 
 ``pulse`` writes the Token Pulse page from a local CodexBar server.
 The pad has one USB link, so ``pulse`` also keeps the tomato countdown
-when that session is still on the glass. ``just dev`` starts Tuna,
-CodexBar, and this helper together. Leave that process running.
+and the power keys. ``just dev`` starts Tuna, CodexBar, and this helper
+together. Leave that process running.
 Start the server first::
 
     codexbar serve --host 127.0.0.1 --port 8899 --refresh-interval 60 --identity redacted
@@ -71,7 +72,7 @@ from touchy_pad.api.images import make_touchy_png
 from touchy_pad.api.macros import key_tap, set_delay
 from touchy_pad.pages.trackpad import build as build_trackpad
 
-from pulse import POLL_S, build_usage_page, fetch_snapshot, pulse_loop
+from pulse import POLL_S, build_usage_page, fetch_snapshot
 
 TOMATO_STATE = Path("/tmp/touchy-tomato-state.json")
 
@@ -98,6 +99,32 @@ FOCUS_S = 25 * 60
 SHORT_S = 5 * 60
 LONG_S = 15 * 60
 PHASE_LABEL = {"focus": "Focus", "short": "Short break", "long": "Long break"}
+
+# name, label, needs a second tap. Rose labels are the ones that do.
+POWER_KEYS = (
+    ("sleep", "Sleep", False),
+    ("lock", "Lock", False),
+    ("display", "Display", False),
+    ("logout", "Log out", True),
+    ("restart", "Restart", True),
+    ("shutdown", "Shut down", True),
+)
+POWER_IDLE = "Rose keys need a second tap"
+POWER_ARM_S = 5.0
+# A page rebuild can hand the same tap back. Ignore that echo, so the
+# first tap on a rose key is not also the confirming tap.
+POWER_REPLAY_S = 0.8
+# After a key runs, ignore that same key. The rewrite of the status
+# line can hand the confirming tap back, and that echo must not run
+# Sleep twice or arm Shut down again.
+POWER_QUIET_S = 1.5
+POWER_OSASCRIPT = {
+    "sleep": 'tell application "System Events" to sleep',
+    "lock": 'tell application "System Events" to keystroke "q" using {control down, command down}',
+    "logout": 'tell application "System Events" to log out',
+    "restart": 'tell application "System Events" to restart',
+    "shutdown": 'tell application "System Events" to shut down',
+}
 
 # Icons are transparent outside the artwork. The button fill matches the
 # screen (display.cpp uses 0x000020), so a key has no plate of its own.
@@ -306,6 +333,147 @@ def build_tomato_page(commands: queue.Queue[str], clock: Clock) -> protobuf.Widg
     return widget
 
 
+def _power_label(name: str) -> str:
+    for key, label, _confirm in POWER_KEYS:
+        if key == name:
+            return label
+    return name
+
+
+def build_power_page(commands: queue.Queue[str], status: str, armed: bool) -> protobuf.Widget:
+    def enqueue(name: str):
+        def _on_event(_evt) -> None:
+            commands.put(name)
+
+        return _on_event
+
+    page = Layer(layout=col(gap=6))
+    page += grow(
+        label(
+            "title",
+            "Power",
+            font_size=16,
+            text_align=TextAlign.CENTER,
+            style=style(text_color=0xFFFFFF),
+        ),
+        x=1,
+    )
+    page += grow(
+        label(
+            "power_status",
+            status,
+            font_size=16,
+            text_align=TextAlign.CENTER,
+            style=style(text_color=0xFB7185 if armed else 0xA1A1AA),
+        ),
+        x=1,
+    )
+    board = Layer(layout=grid(cols=2, rows=3, gap=8))
+    for i, (name, text, confirm) in enumerate(POWER_KEYS):
+        board += cell(
+            button(
+                f"pwr_{name}",
+                text=text,
+                on_click=host_action(on_event=enqueue(name)),
+                style=style(font_size=16, text_color=0xFB7185 if confirm else 0xF4F4F5),
+            ),
+            col=i % 2,
+            row=i // 2,
+            grow_x=1,
+            grow_y=1,
+        )
+    board_widget = protobuf.Widget()
+    board.copy_into(board_widget)
+    board_widget.id = "power_keys"
+    page += grow(board_widget, x=1, y=1)
+    widget = protobuf.Widget()
+    page.copy_into(widget)
+    widget.id = "power"
+    return widget
+
+
+class PowerPad:
+    """Track the second tap for log out, restart, and shut down."""
+
+    def __init__(self) -> None:
+        self.armed: str | None = None
+        self.armed_at = 0.0
+        self.until = 0.0
+        self.status = POWER_IDLE
+        self.dirty = True
+        self._quiet_name: str | None = None
+        self._quiet_until = 0.0
+
+    @property
+    def is_armed(self) -> bool:
+        return self.armed is not None and time.monotonic() < self.until
+
+    def expire(self, now: float) -> None:
+        if self.armed is not None and now >= self.until:
+            self.armed = None
+            self.status = POWER_IDLE
+            self.dirty = True
+
+    def _mark_quiet(self, name: str, now: float) -> None:
+        self._quiet_name = name
+        self._quiet_until = now + POWER_QUIET_S
+
+    def handle(self, name: str, now: float) -> None:
+        if self._quiet_name == name and now < self._quiet_until:
+            return
+        confirm = any(key == name and needs for key, _label, needs in POWER_KEYS)
+        if confirm and self.armed == name and now < self.armed_at + POWER_REPLAY_S:
+            return
+        if confirm and self.armed == name and now < self.until:
+            self.armed = None
+            self.status = POWER_IDLE
+            self.dirty = True
+            self._mark_quiet(name, now)
+            _run_power(name)
+            return
+        if confirm:
+            self.armed = name
+            self.armed_at = now
+            self.until = now + POWER_ARM_S
+            self.status = f"Tap again to {_power_label(name).lower()}"
+            self.dirty = True
+            return
+        self.armed = None
+        if self.status != POWER_IDLE:
+            self.status = POWER_IDLE
+            self.dirty = True
+        self._mark_quiet(name, now)
+        _run_power(name)
+
+
+def _run_power(name: str) -> None:
+    def work() -> None:
+        if name == "display":
+            proc = subprocess.run(["pmset", "displaysleepnow"], capture_output=True, text=True)
+        else:
+            script = POWER_OSASCRIPT.get(name)
+            if script is None:
+                print(f"power {name} is unknown", flush=True)
+                return
+            proc = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout).strip()
+            print(f"power {name} failed: {detail}", flush=True)
+            return
+        print(f"power {name}", flush=True)
+
+    print(f"power {name}…", flush=True)
+    threading.Thread(target=work, daemon=True).start()
+
+
+def _save_power(pad, commands: queue.Queue[str], power: PowerPad, drive: str) -> str:
+    return pad.user_screen_save(
+        "power",
+        build_power_page(commands, power.status, power.is_armed),
+        drive=drive,
+    )
+
+
 def setup() -> None:
     with touchy_open() as pad:
         info = pad.board_info
@@ -325,6 +493,10 @@ def setup() -> None:
         # Save a still face here so the page exists before that process starts.
         pad.user_screen_save("tomato", build_tomato_page(queue.Queue(), Clock()))
         print("saved F:host/uscr/tomato.pb", flush=True)
+        idle = PowerPad()
+        idle.dirty = False
+        pad.user_screen_save("power", build_power_page(queue.Queue(), idle.status, False))
+        print("saved F:host/uscr/power.pb", flush=True)
         pad.show_user_screen("apps")
         print("showing apps", flush=True)
 
@@ -431,7 +603,13 @@ def _pulse_fetch(slot: dict, stop: threading.Event) -> None:
             return
 
 
-def _serve_clock(commands: queue.Queue[str], clock: Clock, with_pulse: bool = False) -> None:
+def _serve_clock(
+    commands: queue.Queue[str],
+    clock: Clock,
+    with_pulse: bool = False,
+    own_tomato: bool = True,
+    power_commands: queue.Queue[str] | None = None,
+) -> None:
     # Rewriting tomato.pb rebuilds the page body in place, which is what
     # makes the label text change. set_property does not reach a label
     # inside a swapped user page.
@@ -465,6 +643,8 @@ def _serve_clock(commands: queue.Queue[str], clock: Clock, with_pulse: bool = Fa
             pulse_drive,
             pulse_visible,
             pulse_slot,
+            own_tomato,
+            power_commands if power_commands is not None else queue.Queue(),
         )
     finally:
         stop_pulse.set()
@@ -483,7 +663,13 @@ def _serve_clock_link(
     pulse_drive: str,
     pulse_visible: bool,
     pulse_slot: dict,
+    own_tomato: bool,
+    power_commands: queue.Queue[str],
 ) -> None:
+    power = PowerPad()
+    power_drive = "F"
+    power_shown = ""
+    power_visible = False
     with touchy_open() as pad:
         info = pad.board_info
         print(f"board {info.board_name}  firmware {info.firmware_version_str}", flush=True)
@@ -522,7 +708,7 @@ def _serve_clock_link(
                 print(f"phase {item}", flush=True)
                 threading.Thread(target=_chime, args=(item,), daemon=True).start()
             current = f"{_fmt(clock.remaining)} {clock.status()}"
-            if current != shown or drive != visible:
+            if own_tomato and (current != shown or drive != visible):
                 try:
                     path, drive = _save_with_ram_fallback(
                         lambda target: _save_tomato(pad, commands, clock, target),
@@ -551,6 +737,42 @@ def _serve_clock_link(
                     print(f"ready {current}", flush=True)
                 visible = drive
                 shown = current
+            while True:
+                try:
+                    power_name = power_commands.get_nowait()
+                except queue.Empty:
+                    break
+                if time.monotonic() < ignore_until:
+                    continue
+                power.handle(power_name, time.monotonic())
+            power.expire(time.monotonic())
+            power_key = f"{power.status}:{power.is_armed}"
+            if power.dirty or power_key != power_shown:
+                try:
+                    power_path, power_drive = _save_with_ram_fallback(
+                        lambda target: _save_power(pad, power_commands, power, target),
+                        power_drive,
+                    )
+                except TouchyError as exc:
+                    if exc.code_name != "IO_ERROR":
+                        raise
+                    print(
+                        "flash write is stuck. Tap RST once, and do not hold BOOT. Retrying.",
+                        flush=True,
+                    )
+                    time.sleep(1)
+                    continue
+                power.dirty = False
+                print(f"saved {power_path}  {power.status}", flush=True)
+                if (
+                    not power_visible
+                    and os.environ.get("TOUCHY_POWER_SHOW", "0") == "1"
+                ):
+                    pad.show_user_screen("power", drive=power_drive)
+                    ignore_until = time.monotonic() + 1.5
+                    power_visible = True
+                    print(f"showing {power_path}", flush=True)
+                power_shown = power_key
             if with_pulse:
                 shown_pulse, pulse_drive, pulse_visible = _refresh_pulse(
                     pad, pulse_slot, shown_pulse, pulse_drive, pulse_visible
@@ -589,15 +811,20 @@ def _refresh_pulse(
 
 def clock_loop(with_pulse: bool = False) -> None:
     commands: queue.Queue[str] = queue.Queue()
+    power_commands: queue.Queue[str] = queue.Queue()
     clock = Clock()
-    if not _restore_clock(clock):
-        if with_pulse:
-            pulse_loop()
-            return
-        # Standalone clock starts at 25:00 paused.
+    restored = _restore_clock(clock)
+    # A fresh pulse must not replace a countdown that is already on the glass.
+    own_tomato = restored or not with_pulse
     while True:
         try:
-            _serve_clock(commands, clock, with_pulse=with_pulse)
+            _serve_clock(
+                commands,
+                clock,
+                with_pulse=with_pulse,
+                own_tomato=own_tomato,
+                power_commands=power_commands,
+            )
         except TouchyError as exc:
             if exc.code_name != "IO_ERROR":
                 raise
